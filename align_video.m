@@ -23,46 +23,38 @@ end
 %% Find background
 
 load('cam_calib_params', 'cameraParams');
-
-vfile = 'videos/20170917_182446.mov';
+vfile = fullfile('videos', '20170917_182446.MOV');
 
 vid = VideoReader(vfile);
-frames = round([14, 2*60+15] * vid.FrameRate);
+duration = [14, 2*60+15];
 
-idx = frames(1) : round(diff(frames)/30) : frames(2);
-sat = zeros(vid.Height, vid.Width, length(idx));
-for k = 1 : length(idx)
-    I = read(vid, idx(k));
-    Irect = undistortImage(I, cameraParams);
-    hsv  = rgb2hsv(Irect);
-    sat(:,:,k) = squeeze(hsv(:,:,2));
+vid.CurrentTime = duration(1);
+dt = 1;
+
+% sat = zeros(vid.Height, vid.Width, length(idx));
+img0 = uint8(zeros(vid.Height, vid.Width, 3, ceil(diff(duration) / dt)));
+for k = 1 : size(img0, 4)
+%     I = read(vid, idx(k));
+%     Irect = undistortImage(I, cameraParams);
+%     hsv  = rgb2hsv(Irect);
+%     sat(:,:,k) = squeeze(hsv(:,:,2));
+    img0(:,:,:,k) = readFrame(vid);
+    vid.CurrentTime = vid.CurrentTime + dt;
 end
-sat0 = median(sat, 3);
+% sat0 = median(sat, 3);
+backg = undistortImage(median(img0, 4), cameraParams);
+hsv = rgb2hsv(backg);
+sat0 = squeeze(hsv(:,:,2));
 
-%% Align video
+imshow(sat0)
+
+%% calculate extrinsics
 
 BW = edge(sat0, 'canny', 0.3);
-BW = imrotate(BW, 0);
-% BW = BW(100:end-100,100:end-100);
-imshow(BW)
-%%
 
 [H, T, R] = hough(BW, 'RhoResolution', 1, 'ThetaResolution', 0.1);
 
-figure
-imshow(imadjust(mat2gray(H)), 'XData', T, 'Ydata', R, 'InitialMagnification', 'fit')
-title('Hough transform of gantrycrane.png');
-xlabel('\theta'), ylabel('\rho');
-axis on, axis normal, hold on;
-colormap(gca,hot);
-%%
-
 P  = houghpeaks(H, 5, 'threshold', 0); % sorted by line strength
-% expected values: psi+eta and -psi+eta
-% [~, idx] = min( abs(abs(T(P(:,2))) - 90) );
-% eta = ( T(P(1,2)) + T(P(2,2)) )/2;
-
-% P  = houghpeaks(H, 15, 'threshold', ceil(0.3*max(H(:))));
 lines = houghlines(BW, T, R, P, 'FillGap', 100, 'MinLength', 500);
 
 [~, hidx] = sort(abs([lines.theta]), 'descend'); % get horizontal lines
@@ -76,13 +68,20 @@ sidx(tidx); % backhand, forehand line
 % back, short, server, backhand, forehand
 lines = lines([hidx(ridx), sidx(tidx)]);
 
-figure, imshow(Irect), hold on
-for kl = 1 : length(P)
-   xy = [lines(kl).point1; lines(kl).point2];
-   plot(xy(:,1),xy(:,2),'LineWidth',2,'Color','green');
-end
-
-%% calculate points
+% figure, imshow(BW)
+% 
+% figure
+% imshow(imadjust(mat2gray(H)), 'XData', T, 'Ydata', R, 'InitialMagnification', 'fit')
+% title('Hough transform of gantrycrane.png');
+% xlabel('\theta'), ylabel('\rho');
+% axis on, axis normal, hold on;
+% colormap(gca,hot);
+% 
+% figure, imshow(Irect), hold on
+% for kl = 1 : length(P)
+%    xy = [lines(kl).point1; lines(kl).point2];
+%    plot(xy(:,1),xy(:,2),'LineWidth',2,'Color','green');
+% end
 
 % back, short, server, backhand, forehand
 th = [lines.theta]' * pi/180;
@@ -99,50 +98,76 @@ for k2 = 4 : 5
     end
 end
 
-figure, imshow(I), hold on
+worldPoints = [-10, 0, 0
+    -10, 20, 0
+    -10, 25, 0
+    10, 0, 0
+    10, 20, 0
+    10, 25, 0];
+
+imagePoints = [    1.1339    0.4312
+    1.3664    0.6313
+    1.5003    0.7476
+    0.5850    0.4001
+    0.3187    0.5826
+    0.1551    0.6948] * 1e3;
+
+[rotationMatrix, translationVector] = extrinsics(imagePoints, worldPoints(:,1:2), cameraParams);
+% [worldOrientation,worldLocation] = estimateWorldCameraPose(imagePoints,worldPoints,cameraParams)
+rotationMatrix = [-0.9974   -0.0479   -0.0539
+    0.0355    0.3247   -0.9452
+    0.0628   -0.9446   -0.3221];
+translationVector = [-1.9156   -6.0412   39.3986];
+
+camMatrix = cameraMatrix(cameraParams, rotationMatrix, translationVector);
+
+origin = [worldPoints, ones(size(worldPoints,1), 1)] * camMatrix;
+origin = origin(:,1:2) ./ origin(:,3);
+
+figure, imshow(Irect), hold on
 plot(imagePoints(:,1), imagePoints(:,2), 'o', 'markersize', 5, 'linewidth', 2)
 text(imagePoints(:,1), imagePoints(:,2), num2str((1:6)'), ...
     'color', [1 1 1], 'fontsize', 20)
 
-worldPoints = [-10, 0
-    -10, 20
-    -10, 25
-    10, 0
-    10, 20
-    10, 25];
+plot(origin(:,1), origin(:,2), 's', 'linewidth', 2)
 
-[rotationMatrix, translationVector] = extrinsics(imagePoints, worldPoints, cameraParams);
-translationVector(3) = 39.5;
-camMatrix = cameraMatrix(cameraParams, rotationMatrix, translationVector);
+%% rotate and crop
 
-origin = [  10,     0,     0, 1
-            -10,    0,     0, 1
-            10,     20,     0, 1
-            -10,    20,     0, 1
-            10,     25,     0, 1
-            -10,    25,     0, 1] * camMatrix;
-origin = origin(:,1:2) ./ origin(:,3);
+wid = size(Irect, 2);
+hei = size(Irect, 1);
 
-plot(origin(:,1), origin(:,2), 's')
+q = mean(atan2(imagePoints(1:3,2) - imagePoints(4:6,2), ...
+    imagePoints(1:3,1) - imagePoints(4:6,1))) * 180/pi;
+imorigin = mean(imagePoints([1 4],:));
+imoriginr = [imorigin - [wid/2, hei/2], 0] * Rz(q * pi/180);
+imoriginr = round(imoriginr(1:2) + [wid/2, hei/2]);
 
-%%
+img = imrotate(Irect, q, 'bilinear', 'crop');
+img = img((-340:580) + imoriginr(2), (-800:800) + imoriginr(1),:);
 
-T = -translationVector * rotationMatrix';
-R = rotationMatrix;
+imshow(img), hold on
+plot(imoriginr(1), imoriginr(2), 'o')
 
-clear q
-[q(1), q(2), q(3)] = dcm2angle(R, 'YZX');
+%% foreground selection
 
-img = imrotate(Irect, -q(2)*180/pi);
-imshow(img)
+vid.CurrentTime = duration(1);
+Irect = undistortImage(readFrame(vid), cameraParams);
 
+hsv2 = rgb2hsv(Irect);
+hsv1 = rgb2hsv(backg);
 
-%%
-syms pitch z i j
+mask = abs(hsv1(:,:,3) - hsv2(:,:,3)) > 0.05 & ...
+    abs(hsv1(:,:,1) - hsv2(:,:,1)) > 0.005;
 
-t = sym('t', [3, 1]);
-P = Ry(sym(pi)) * Rx(pitch) * [j*z/f; i*z/f; z] + t;
+figure
+subplot(321), imagesc(hsv2(:,:,1)), colorbar
+subplot(323), imagesc(hsv2(:,:,2)), colorbar
+subplot(325), imagesc(hsv2(:,:,3)), colorbar
+subplot(322), imagesc(hsv1(:,:,1)), colorbar
+subplot(324), imagesc(hsv1(:,:,2)), colorbar
+subplot(326), imagesc(hsv1(:,:,3)), colorbar
 
+figure, imshow(mask)
 
 %%
     
