@@ -1,13 +1,27 @@
 %% Try particle filter
-Q = [   1, -0.1
-        -0.1, 1 ];  % measurement noise
-R = 0.001;  % process noise
-x = [1; 1];  % initial state
-xh = [0, 0];
+clear
 
-pf = ParticleFilter(xh + randn(10000, 2));
+Q = [   0.3, -0.01
+        -0.01, 0.1 ] * 1e-1;  % measurement noise
+R = 1e-5;  % process noise
+x = [0; 0];  % initial state
+xh = [0.5, 0];
+StateCovariance = diag([0.5, 0.1]);
 
-N = 50;
+pf = ParticleFilter(xh + mvnrnd([0, 0], StateCovariance, 10000));
+
+ekf = extendedKalmanFilter(@(x, u) ParticleFilter.SampleUpdateEq(x', u, 0)', ...
+    @(x) ParticleFilter.SampleMeasurementFcn(x')', xh', ...
+    'ProcessNoise', [0, 0; 0, R], 'MeasurementNoise', Q, ...
+    'StateCovariance', StateCovariance);
+
+pfm = particleFilter(@ParticleFilter.SampleUpdateEq, ...
+    @ParticleFilter.SampleMeasurementLikelihoodFcn);
+pfm.ResamplingPolicy.MinEffectiveParticleRatio = 0.5;
+pfm.ResamplingMethod = 'systematic';
+initialize(pfm, 10000, xh, StateCovariance, 'StateOrientation', 'row');
+    
+N = 500;
 X = zeros(N, 2);
 Y = zeros(N, 2);
 U = zeros(N, 1);
@@ -19,10 +33,10 @@ Px = zeros(2, 2, N);
 
 for k = 1 : N
     % feedback controller
-    u = 0.05 * (10*sin(k*0.05) - x(1)) - 0.1 * x(2);
+    u = 0.05 * (1*sin(k*0.1) - x(1)) - 0.1 * x(2);
     
     % true state and measurement
-    y = ParticleFilter.SampleMeasurementEq(x', [0; 0]);
+    y = ParticleFilter.SampleMeasurementFcn(x');
     X(k,:) = x';
     Y(k,:) = y;
     U(k,:) = u;
@@ -34,34 +48,45 @@ for k = 1 : N
     Ynoise(k,:) = ynoise';
     Unoise(k,:) = unoise;
     
-    % filter (Particle Filter)
-    Px(:,:,k) = cov(pf.X);
-    [xh, yh] = pf.step(unoise, ynoise);
-    Xh(k,:) = xh';
-    Yh(k,:) = yh';
+%     % filter (Particle Filter)
+%     Px(:,:,k) = cov(pf.X);
+%     [xh, yh] = pf.step(unoise, ynoise);
+%     Xh(k,:) = xh';
+%     Yh(k,:) = yh';
     
-    % filter KF
-    
+%     % filter KF
+%     [xh, Px(:,:,k)] = ekf.correct(ynoise);
+%     Xh(k,:) = xh';
+%     Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh');
+%     ekf.predict(unoise);
+
+    % filter MATLAB's particle filter
+    [~, Px(:,:,k)] = pfm.correct(ynoise);
+    xh = pfm.getStateEstimate;
+    Xh(k,:) = xh;
+    Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh);
+    pfm.predict(unoise);
 end
 
-Ybounds = [min(Y); max(Y)];
-mean(abs(Y - Yh))
-mean(abs(Y - Ynoise))
+goodnessOfFit(Yh, Y, 'NRMSE')'
+% mean(abs(Y - Yh)) ./ mean(abs(Y - Ynoise))
     
-figure, plot(X, ':')
-hold on, set(gca, 'ColorOrderIndex', 1), plot(Xh)
-
+% figure, plot(X, ':')
+% hold on, set(gca, 'ColorOrderIndex', 1), plot(Xh)
+% 
 figure, 
-subplot(121), plot(Ynoise)
-hold on, set(gca, 'ColorOrderIndex', 1), plot(Y)
-subplot(122), plot(Yh)
-hold on, set(gca, 'ColorOrderIndex', 1), plot(Y)
+subplot(131), plot(Ynoise, '.-')
+hold on, set(gca, 'ColorOrderIndex', 1), plot(Y, '--'), title('Unfiltered')
+subplot(132), plot(Yh, '.-')
+hold on, set(gca, 'ColorOrderIndex', 1), plot(Y, '--'), title('Filtered')
+subplot(133), plot([Unoise, U]), title('Input')
 
-figure,
-subplot(221), plot(Ynoise(:,1), Y(:,1), '.', Ybounds(:,1), Ybounds(:,1), 'k'), ylabel('Unfiltered'), axis equal
-subplot(222), plot(Ynoise(:,2), Y(:,2), '.', Ybounds(:,2), Ybounds(:,2), 'k'), axis equal
-subplot(223), plot(Yh(:,1), Y(:,1), '.', Ybounds(:,1), Ybounds(:,1), 'k'), ylabel('Filtered'), axis equal
-subplot(224), plot(Yh(:,2), Y(:,2), '.', Ybounds(:,2), Ybounds(:,2), 'k'), axis equal
+% Ybounds = [min(Y); max(Y)];
+% figure,
+% subplot(221), plot(Ynoise(:,1), Y(:,1), '.', Ybounds(:,1), Ybounds(:,1), 'k'), ylabel('Unfiltered'), axis equal
+% subplot(222), plot(Ynoise(:,2), Y(:,2), '.', Ybounds(:,2), Ybounds(:,2), 'k'), axis equal
+% subplot(223), plot(Yh(:,1), Y(:,1), '.', Ybounds(:,1), Ybounds(:,1), 'k'), ylabel('Filtered'), axis equal
+% subplot(224), plot(Yh(:,2), Y(:,2), '.', Ybounds(:,2), Ybounds(:,2), 'k'), axis equal
 
 %% Test multi-variable normal random
 mu = [0, 0];

@@ -6,8 +6,12 @@ classdef ParticleFilter < handle
     
     properties
         X  % state particles
-        measurementEq
+        PX
+        MeasurementLikelihoodFcn
         updateEq
+        num_particles
+        
+        count
     end
     
     methods
@@ -15,8 +19,12 @@ classdef ParticleFilter < handle
             %UNTITLED Construct an instance of this class
             %   Detailed explanation goes here
             obj.X = X0;
-            obj.measurementEq = @ParticleFilter.SampleMeasurementEq;
+            obj.num_particles = size(X0, 1);
+            obj.PX = ones(size(X0,1), 1) / obj.num_particles;
+            obj.MeasurementLikelihoodFcn = @ParticleFilter.SampleMeasurementLikelihoodFcn;
             obj.updateEq = @ParticleFilter.SampleUpdateEq;
+            
+            obj.count = 0;
         end
         
         function [xh, yh] = step(obj, u, y)
@@ -24,18 +32,36 @@ classdef ParticleFilter < handle
             %   Detailed explanation goes here
             
             % calculate posterior probability
-            [Yh, P] = obj.measurementEq(obj.X, y);
+            [P, Yh] = obj.MeasurementLikelihoodFcn(obj.X, y);
+%             obj.PX = obj.PX .* (P / sum(P));
+            obj.PX = obj.PX .* P;
+            obj.PX = obj.PX / sum(obj.PX);
             
             % select best estimates
-            [~, midx] = max(P);
-            xh = obj.X(midx,:)';
-            yh = Yh(midx,:)';
+%             [~, midx] = max(obj.PX);
+%             xh = obj.X(midx,:)';
+%             yh = Yh(midx,:)';
+            xh = sum(obj.X .* obj.PX)' / sum(obj.PX);
+            yh = sum(Yh .* obj.PX)' / sum(obj.PX);
             
             % resample states
-            Ps = cumsum(P);
-            nselect = rand(1, length(Ps)) * Ps(end);
-            [~, idx] = min(abs(Ps - nselect));
-            obj.X = obj.X(idx,:);
+%             1 / sum(obj.PX.^2)
+            obj.count = obj.count + 1;
+            if 1 / sum(obj.PX.^2) < obj.num_particles / 3
+                obj.count;
+                obj.count = 0;
+                Ps = cumsum(obj.PX);
+                Ps(end) = 1;
+                nselect = rand(1, length(Ps)) * Ps(end);
+                [~, idx] = min(abs(Ps - nselect));
+                
+%                 figure, plot(Ps)
+%                 hold on, plot(idx, Ps, 'o')
+                
+                
+                obj.X = obj.X(idx,:);
+                obj.PX = obj.PX(idx) / sum(obj.PX(idx));
+            end
             
             % update state
             obj.X = obj.updateEq(obj.X, u);
@@ -46,11 +72,11 @@ classdef ParticleFilter < handle
     end
     
     methods (Static)
-        function Xk = SampleUpdateEq(X, u, V)
+        function Xk = SampleUpdateEq(X, u, W)
             % p(Xkk | uk, Xk)
             if nargin == 2
-                R = 0.001;
-                V = mvnrnd(0, R, size(X, 1));
+                R = 1e-5;
+                W = mvnrnd(0, R, size(X, 1));
             end
            
             A = [   1, 1
@@ -58,17 +84,21 @@ classdef ParticleFilter < handle
             B = [   0
                     1 ];
             
-            Xk = X * A' + (u' + V) * B';
+            Xk = X * A' + (u' - W) * B';
         end
         
-        function [Yh, P] = SampleMeasurementEq(X, y)
+        function Yh = SampleMeasurementFcn(X)
             % P(z | X)
             C = [   1, 0
                     0, 1 ];
-            Q = [   1, -0.1
-                    -0.1, 1 ];
                 
             Yh = X * C';
+        end
+        
+        function [P, Yh] = SampleMeasurementLikelihoodFcn(X, y)
+            Q = [   0.3, -0.01
+                    -0.01, 0.1 ] * 1e-1;
+            Yh = ParticleFilter.SampleMeasurementFcn(X);
             P = mvnpdf(y', Yh, Q);
         end
     end
