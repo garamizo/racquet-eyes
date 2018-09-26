@@ -2,10 +2,10 @@
 clear
 
 Q = [   0.3, -0.01
-        -0.01, 0.1 ] * 1e-1;  % measurement noise
+        -0.01, 0.1 ];  % measurement noise
 R = 1e-5;  % process noise
 x = [0; 0];  % initial state
-xh = [0.5, 0];
+xh = [0.0, 0];
 StateCovariance = diag([0.5, 0.1]);
 
 pf = ParticleFilter(xh + mvnrnd([0, 0], StateCovariance, 10000));
@@ -54,18 +54,18 @@ for k = 1 : N
 %     Xh(k,:) = xh';
 %     Yh(k,:) = yh';
     
-%     % filter KF
-%     [xh, Px(:,:,k)] = ekf.correct(ynoise);
-%     Xh(k,:) = xh';
-%     Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh');
-%     ekf.predict(unoise);
+    % filter KF
+    [xh, Px(:,:,k)] = ekf.correct(ynoise);
+    Xh(k,:) = xh';
+    Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh');
+    ekf.predict(unoise);
 
-    % filter MATLAB's particle filter
-    [~, Px(:,:,k)] = pfm.correct(ynoise);
-    xh = pfm.getStateEstimate;
-    Xh(k,:) = xh;
-    Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh);
-    pfm.predict(unoise);
+%     % filter MATLAB's particle filter
+%     [~, Px(:,:,k)] = pfm.correct(ynoise);
+%     xh = pfm.getStateEstimate;
+%     Xh(k,:) = xh;
+%     Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh);
+%     pfm.predict(unoise);
 end
 
 goodnessOfFit(Yh, Y, 'NRMSE')'

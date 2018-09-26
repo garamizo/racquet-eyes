@@ -83,8 +83,8 @@ classdef ParticleFilter < handle
                     0, 1 ];
             B = [   0
                     1 ];
-            
-            Xk = X * A' + (u' - W) * B';
+            amp = 50;
+            Xk = X * A' + (1/amp)*sin(amp*(u' - W)) * B';
         end
         
         function Yh = SampleMeasurementFcn(X)
@@ -97,7 +97,7 @@ classdef ParticleFilter < handle
         
         function [P, Yh] = SampleMeasurementLikelihoodFcn(X, y)
             Q = [   0.3, -0.01
-                    -0.01, 0.1 ] * 1e-1;
+                    -0.01, 0.1 ] * 1e0;
             Yh = ParticleFilter.SampleMeasurementFcn(X);
             P = mvnpdf(y', Yh, Q);
         end
