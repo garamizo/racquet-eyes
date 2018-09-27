@@ -48,7 +48,12 @@ translationVector = -worldLocation * worldOrientation';
 worldPointsEst = pointsToWorld(cameraParams,rotationMatrix,translationVector,imagePoints);
 error = sqrt(sum((worldPointsEst - worldPoints(:,1:2)).^2, 2))
 
-%% Simulation
+%% Animation
+%   Click points on right subplot to see the projection on the court
+
+clear
+load('extrinsic_calibration.mat')
+
 outCourt = [10, 0
             10, 40
             -10, 40
@@ -80,7 +85,7 @@ figure
 subplot(121), plot(outCourt(:,1), outCourt(:,2), 'k', 'linewidth', 5)
 hold on, plot(serveBox(:,1), serveBox(:,2), 'r', 'linewidth', 3)
 plot(shortLine(:,1), shortLine(:,2), 'r--', 'linewidth', 3)
-axis equal, grid on, xlabel('X_W'), ylabel('Y_W')
+axis equal, xlim([-10, 10]), ylim([0, 40]), grid on, xlabel('X_W'), ylabel('Y_W')
 subplot(122), imshow(frame)
 set(gcf, 'Position', [1          41        1680         933])
 
