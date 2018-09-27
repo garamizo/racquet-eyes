@@ -22,7 +22,7 @@ end
 
 %% Find background
 
-load('cam_calib_params', 'cameraParams');
+load('cameraParams_fisheye', 'cameraParams');
 vfile = fullfile('videos', '20170917_182446.MOV');
 
 vid = VideoReader(vfile);
