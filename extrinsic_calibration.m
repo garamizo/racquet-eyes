@@ -110,31 +110,47 @@ subplot(121), plot(wPts_ft(:,1), wPts_ft(:,2), 'x', 'linewidth', 5, 'markersize'
 
 %% From 3D to image
 
-% footprint = [-4, 3, 0];  % in ft, Leslie
-% height = 6;
+filename = 'data/videos/20170201_120045.MOV';
+v = VideoReader(filename);
 
-footprint = [4, 3, 0];  % in ft, Gui
-height = 5.5;
+%%
+v.CurrentTime = 40;
 
-% footprint = [7.75, 22.5, 0];  % in ft, Gui
-% height = 5.5;
-
-box = ([1, 0, 0
-        1, 0, height/2
-       1, 0, height
-       -1, 0, height
-       -1, 0, height/2
-       -1, 0, 0
-       1, 0, 0 ] + footprint) * 304.8;
-
-iPts = worldToImage(cameraParams,rotationMatrix,translationVector, box);
+frame = readFrame(v);
         
 figure
 subplot(121), plot(outCourt(:,1), outCourt(:,2), 'k', 'linewidth', 5)
 hold on, plot(serveBox(:,1), serveBox(:,2), 'r', 'linewidth', 3)
 plot(shortLine(:,1), shortLine(:,2), 'r--', 'linewidth', 3)
-plot(footprint(:,1), footprint(:,2), 'x', 'linewidth', 5, 'markersize', 20)
 axis equal, xlim([-10, 10]), ylim([0, 40]), grid on, xlabel('X_W'), ylabel('Y_W')
 subplot(122), imshow(frame)
-hold on, fill(iPts(:,1), iPts(:,2), [0.7, 0, 0], 'linewidth', 1, 'FaceAlpha', 0.3, 'EdgeColor', [0.7, 0, 0])
-set(gcf, 'Position', [0.0010    0.0410    1.5360    0.7488]*1e3)
+hold on,
+set(gcf, 'Position', [1          41        1680         933])
+
+[x, y] = getpts();
+wPts = pointsToWorld(cameraParams,rotationMatrix,translationVector,[x, y]);
+wPts_ft = wPts / 304.8;
+
+colors = [0.7, 0, 0
+          0, 0.7, 0
+          0, 0, 0.7
+          0.8, 0.2, 0.6];
+
+for k = 1 : length(x)
+    footprint = [wPts_ft(k, 1), wPts_ft(k, 2), 0]  % in ft
+    height = 5.7;
+
+    wid = 2;
+    box = ([wid/2, 0, 0
+           wid/2, 0, height
+           -wid/2, 0, height
+           -wid/2, 0, 0
+           wid/2, 0, 0 ] + footprint) * 304.8;
+
+    iPts = worldToImage(cameraParams,rotationMatrix,translationVector, box);
+
+
+    subplot(121), plot(footprint(:,1), footprint(:,2), 'x', 'linewidth', 5, 'markersize', 20, 'color', colors(k,:))
+    subplot(122), fill(iPts(:,1), iPts(:,2), colors(k,:), 'linewidth', 1, 'FaceAlpha', 0.3, 'EdgeColor', colors(k,:))
+end
+

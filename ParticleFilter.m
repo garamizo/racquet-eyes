@@ -102,37 +102,53 @@ classdef ParticleFilter < handle
             P = mvnpdf(y', Yh, Q);
         end
         
-        function Xk = ImageUpdateEq(X, W)
+        function Xk = ImageUpdateEq(X, dt)
             % X: [x, y, xd, yd]
-            % random acceleration
-            if nargin == 2
-                R = diag([1, 1].^2);
-                W = mvnrnd(0, R, size(X, 1));
-            end
-           
-            dt = 1 / 60;
-            Xk = [X(:,1:2) + X(:,3:4)*dt + 0.5 * W*dt^2, X(:,3:4) + W*dt];
+            % random velocity
+            R = diag([10, 10].^2);
+            W = mvnrnd([0, 0], R, size(X, 1));
+
+%             dt = 1 / 60;
+            Xk = X(:,1:2) + W*dt;
         end
         
         function P = ImageMeasurementLikelihoodFcn(X, y, cameraParams, ...
                                           rotationMatrix, translationVector)
             % y: image
+            % X: [x, y, xd, yd] in mm
             P = zeros(size(X, 1), 1);
             for k = 1 : size(X, 1)
-                footprint = X(k,1:2);
-                height = 5.5;
-                wid = 2;
+                footprint = [X(k,1:2), 0];
+                h = 6.5;
+                w = 1;  % width/2
+                b = 1;
+                
+%                 boxNot = ([w+b, 0, 0
+%                         w+b, 0, h+b
+%                         -w-b, 0, h+b
+%                         -w-b, 0, 0
+%                         -w-b, -b, 0
+%                         w+b, -b, 0
+%                         w+b, 0, 0] + footprint) * 304.8;
+%                 iPts = worldToImage(cameraParams,rotationMatrix,translationVector, boxNot);
+%                 BWnot = roipoly(y, iPts(:,1), iPts(:,2)) & y;
 
-                box = ([wid/2, 0, 0
-                       wid/2, 0, height
-                       -wid/2, 0, height
-                       -wid/2, 0, 0
-                       wid/2, 0, 0 ] + footprint) * 304.8;
-
+                box = ([w, 0, 0
+                       w, 0, h
+                       -w, 0, h
+                       -w, 0, 0
+                       w, 0, 0 ] + footprint) * 304.8;
                 iPts = worldToImage(cameraParams,rotationMatrix,translationVector, box);
+                BW = roipoly(y, iPts(:,1), iPts(:,2)) & y;
 
-                BW = roipoly(u, iPts(:,1), iPts(:,2));
-                P(k) = sum(sum(y & BW, 1), 2) / sum(BW(:)); 
+                P(k) = sum(sum(y & BW, 1), 2) / sum(BW(:));
+                if isnan(P(k))
+                    P(k) = 0;
+                end
+                
+                figure, imshow(y), hold on
+                fill(iPts(:,1), iPts(:,2), [1, 0, 0], 'linewidth', 1, ...
+                    'FaceAlpha', 0.3, 'EdgeColor', [1, 0, 0]);
             end
         end
     end
