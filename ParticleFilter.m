@@ -101,6 +101,40 @@ classdef ParticleFilter < handle
             Yh = ParticleFilter.SampleMeasurementFcn(X);
             P = mvnpdf(y', Yh, Q);
         end
+        
+        function Xk = ImageUpdateEq(X, W)
+            % X: [x, y, xd, yd]
+            % random acceleration
+            if nargin == 2
+                R = diag([1, 1].^2);
+                W = mvnrnd(0, R, size(X, 1));
+            end
+           
+            dt = 1 / 60;
+            Xk = [X(:,1:2) + X(:,3:4)*dt + 0.5 * W*dt^2, X(:,3:4) + W*dt];
+        end
+        
+        function P = ImageMeasurementLikelihoodFcn(X, y, cameraParams, ...
+                                          rotationMatrix, translationVector)
+            % y: image
+            P = zeros(size(X, 1), 1);
+            for k = 1 : size(X, 1)
+                footprint = X(k,1:2);
+                height = 5.5;
+                wid = 2;
+
+                box = ([wid/2, 0, 0
+                       wid/2, 0, height
+                       -wid/2, 0, height
+                       -wid/2, 0, 0
+                       wid/2, 0, 0 ] + footprint) * 304.8;
+
+                iPts = worldToImage(cameraParams,rotationMatrix,translationVector, box);
+
+                BW = roipoly(u, iPts(:,1), iPts(:,2));
+                P(k) = sum(sum(y & BW, 1), 2) / sum(BW(:)); 
+            end
+        end
     end
 end
 

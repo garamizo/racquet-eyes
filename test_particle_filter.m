@@ -55,17 +55,17 @@ for k = 1 : N
 %     Yh(k,:) = yh';
     
     % filter KF
-    [xh, Px(:,:,k)] = ekf.correct(ynoise);
-    Xh(k,:) = xh';
-    Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh');
-    ekf.predict(unoise);
+%     [xh, Px(:,:,k)] = ekf.correct(ynoise);
+%     Xh(k,:) = xh';
+%     Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh');
+%     ekf.predict(unoise);
 
 %     % filter MATLAB's particle filter
-%     [~, Px(:,:,k)] = pfm.correct(ynoise);
-%     xh = pfm.getStateEstimate;
-%     Xh(k,:) = xh;
-%     Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh);
-%     pfm.predict(unoise);
+    [~, Px(:,:,k)] = pfm.correct(ynoise);
+    xh = pfm.getStateEstimate;
+    Xh(k,:) = xh;
+    Yh(k,:) = ParticleFilter.SampleMeasurementFcn(xh);
+    pfm.predict(unoise);
 end
 
 goodnessOfFit(Yh, Y, 'NRMSE')'
@@ -75,11 +75,12 @@ goodnessOfFit(Yh, Y, 'NRMSE')'
 % hold on, set(gca, 'ColorOrderIndex', 1), plot(Xh)
 % 
 figure, 
-subplot(131), plot(Ynoise, '.-')
+h1 = subplot(131); plot(Ynoise, '.-')
 hold on, set(gca, 'ColorOrderIndex', 1), plot(Y, '--'), title('Unfiltered')
-subplot(132), plot(Yh, '.-')
+h2 = subplot(132); plot(Yh, '.-')
 hold on, set(gca, 'ColorOrderIndex', 1), plot(Y, '--'), title('Filtered')
-subplot(133), plot([Unoise, U]), title('Input')
+h3 = subplot(133); plot([Unoise, U]), title('Input')
+linkaxes([h1, h2, h3], 'x')
 
 % Ybounds = [min(Y); max(Y)];
 % figure,
