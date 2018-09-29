@@ -117,29 +117,51 @@ classdef ParticleFilter < handle
             % y: image
             % X: [x, y, xd, yd] in mm
             
-            w = 0.75;  % width/2
+            w = 1.0;  % width/2
             h = 6.0;
             bf = h * 0.0;  % bottom offset
-            tf = h/6;  % top offset
+            tf = h * 0.0;  % top offset
+            b = 1; % boundary
             
             P = zeros(size(X, 1), 1);
             for k = 1 : size(X, 1)
                 %%
                 footprint = [X(k,1:2), 0];
-%                 footprint = [6.0, 13, 0];
+%                 footprint = [3.5, 22.5, 0];
 
-                box = ([w, 0, bf
-                       w, 0, h-tf
-                       -w, 0, h-tf
-                       -w, 0, bf
-                       w, 0, bf ] + footprint) * 304.8;
+                box = ([w, 0, 0
+                       w, 0, h
+                       -w, 0, h
+                       -w, 0, 0
+                       w, 0, 0 ] + footprint) * 304.8;
                 iPts = worldToImage(cameraParams,rotationMatrix,translationVector, box);
                 BW = roipoly(y, iPts(:,1), iPts(:,2));
+                
+                boxOut = ([w+b, 0, -b
+                       w+b, 0, h+b
+                       -w-b, 0, h+b
+                       -w-b, 0, -b
+                       w+b, 0, -b
+                       w, 0, 0
+                       w, 0, h
+                       -w, 0, h
+                       -w, 0, 0
+                       w, 0, 0            ] + footprint) * 304.8;
+                iPts = worldToImage(cameraParams,rotationMatrix,translationVector, boxOut);
+                BWout = roipoly(y, iPts(:,1), iPts(:,2));
 
-                P(k) = sum(sum(y & BW, 1), 2) / sum(BW(:));
-                if isnan(P(k))
+                P(k) = sum(sum(y & BW, 1), 2) - sum(sum(y & BWout, 1), 2);
+                sBW = sum(BW(:));
+                sBWout = sum(BWout(:));
+                if sBW + sBWout == 0
                     P(k) = 0;
+                else
+                    P(k) = (P(k) + sBWout) / (sBW + sBWout);
                 end
+%                 P(k) = sum(sum(y & BW, 1), 2) / sum(BW(:));
+%                 if isnan(P(k))
+%                     P(k) = 0;
+%                 end
                 
 %                 iPts_ft = worldToImage(cameraParams,rotationMatrix,translationVector, footprint * 304.8);
 %                 figure, imshow(y), hold on
@@ -147,6 +169,7 @@ classdef ParticleFilter < handle
 %                     'FaceAlpha', 0.3, 'EdgeColor', [1, 0, 0]);
 %                 plot(iPts_ft(:,1), iPts_ft(:,2), 'o', 'Color', [1, 0, 0]);
             end
+            
         end
     end
 end

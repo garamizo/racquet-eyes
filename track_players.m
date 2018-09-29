@@ -42,7 +42,7 @@ figure, histogram(err)
 load('extrinsic_calibration.mat')
 
 % vsrc = VideoReader('data/videos/20170201_120045.MOV');
-vsrc.CurrentTime = 300;
+vsrc.CurrentTime = 160;
 skipFrames = 5;
 
 ylikely = @(x, y) ParticleFilter.ImageMeasurementLikelihoodFcn(x, y, cameraParams, ...
@@ -54,11 +54,11 @@ pfm = particleFilter(@(x) ParticleFilter.ImageUpdateEq(x, skipFrames/vsrc.FrameR
 % pfm.ResamplingPolicy.SamplingInterval = 3;
 pfm.ResamplingPolicy.MinEffectiveParticleRatio = 0.6;
 pfm.ResamplingMethod = 'multinomial';
-initialize(pfm, 50, [-10, 10; 0, 40], 'StateOrientation', 'row');
+initialize(pfm, 100, [-10, 10; 0, 40], 'StateOrientation', 'row');
 
 bg_double = cast(bg, 'double');
 
-nbest = 20;  % number of candidate tracks
+nbest = 10;  % number of candidate tracks
 colors = colormap('hsv');
 colors = colors(round(linspace(1, size(colors,1), nbest)),:);
 frame  = vsrc.readFrame();
@@ -112,7 +112,7 @@ set(gcf, 'Position', [1          41        1680         933])
 
 %%
 while hasFrame(vsrc)
-    %
+    %%
     tic
     frame  = vsrc.readFrame();
     vsrc.CurrentTime = vsrc.CurrentTime + (skipFrames - 1) / vsrc.FrameRate;
@@ -120,35 +120,45 @@ while hasFrame(vsrc)
     mask = sum(abs(cast(frame, 'double') - bg_double), 3) > 150;
     
     [~, Px] = pfm.correct(mask);
+    
+    % drop 10% lowest with random particles
+%     [~, idx] = sort(pfm.Weights, 'ascend');
+%     pfm.Particles(idx(1:10),:) = rand(10,2) .* [20, 40] + [-10, 0];
+%     pfm.Weights(idx(1:10),:) = pfm.MeasurementLikelihoodFcn(pfm.Particles(idx(1:10),:), mask);
 
     X = pfm.Particles;
-    P = pfm.Weights;
     
-    [Psort, idx] = sort(P, 'descend');
-%     ylikely(X(idx(1:10),:), mask)
-    
+    [Psort, idx] = sort(pfm.Weights, 'descend');
+%     ylikely(pfm.Particles(idx(1:10),:), mask)
+    Psort(1:10)
 
     
     set(hi, 'CData', frame)
     for p = 1 : nbest
         footprint = [X(idx(p), 1:2), 0];  % in ft
 
-        w = 0.75;  % width/2
-        h = 6.0;
-        bf = h * 0.0;  % bottom offset
-        tf = h/6;  % top offset
-        box = ([w, 0, bf    
-               w, 0, h-tf
-               -w, 0, h-tf
-               -w, 0, bf
-               w, 0, bf ] + footprint) * 304.8;
+            w = 1.0;  % width/2
+            h = 6.0;
+            bf = h * 0.0;  % bottom offset
+            tf = h * 0.0;  % top offset
+            b = 1; % boundary
+            box = ([w+b, 0, -b
+                   w+b, 0, h+b
+                   -w-b, 0, h+b
+                   -w-b, 0, -b
+                   w+b, 0, -b
+                   w, 0, 0
+                   w, 0, h
+                   -w, 0, h
+                   -w, 0, 0
+                   w, 0, 0            ] + footprint) * 304.8;
 
         iPts = worldToImage(cameraParams,rotationMatrix,translationVector, box);
         iPts_foot = worldToImage(cameraParams,rotationMatrix,translationVector, footprint * 304.8);
 
         set(h1(p), 'XData', footprint(:,1), 'YData', footprint(:,2))
         set(h2(p), 'XData', iPts(:,1), 'YData', iPts(:,2))
-        set(h3(p), 'XData', iPts_foot(1), 'YData', iPts_foot(2))
+%         set(h3(p), 'XData', iPts_foot(1), 'YData', iPts_foot(2))
     end
     
 %     tic
