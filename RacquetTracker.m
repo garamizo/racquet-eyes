@@ -1,10 +1,9 @@
 classdef RacquetTracker < handle
-    %UNTITLED7 Summary of this class goes here
-    %   Detailed explanation goes here
-    
+
     properties
         startTime = 160
         skipFrames = 5
+        update_dt  % at every frame
 
         calibFile = 'extrinsic_calibration.mat'
         videoFile = 'data/videos/20170201_120045.MOV'
@@ -15,8 +14,9 @@ classdef RacquetTracker < handle
         boxHeight = 6.0
         boxBound = 1.0
         
-        speed_std = 10  % feet/s
+        speed_std = 15  % feet/s
         numParticles = 100
+        showParticles = 10
     end
     
     properties (Access = private)
@@ -36,22 +36,24 @@ classdef RacquetTracker < handle
         colors
         
         % plot handles
-        hi, h1, h2
+        hi, h1, h2, h3
     end
     
     methods
-        function obj = RacquetTracker(varargin)
+        function obj = RacquetTracker()
 
             % setup video
             obj.vsrc = VideoReader(obj.videoFile);
             obj.vsrc.CurrentTime = obj.startTime;
             
+            obj.update_dt = obj.skipFrames / obj.vsrc.FrameRate;
+            
             % setup particle filter
             obj.pf = particleFilter(@(x) obj.UpdateFcn(x), ...
                 @(x, y) obj.MeasurementLikelihoodFcn(x, y));
-            % obj.pf.ResamplingPolicy.TriggerMethod = 'interval';
-            % obj.pf.ResamplingPolicy.SamplingInterval = 3;
-            obj.pf.ResamplingPolicy.MinEffectiveParticleRatio = 0.6;
+            obj.pf.ResamplingPolicy.TriggerMethod = 'interval';
+            obj.pf.ResamplingPolicy.SamplingInterval = 3;
+%             obj.pf.ResamplingPolicy.MinEffectiveParticleRatio = 0.2;
             obj.pf.ResamplingMethod = 'multinomial';
             initialize(obj.pf, obj.numParticles, [-10, 10; 0, 40], 'StateOrientation', 'row');
 
@@ -103,7 +105,7 @@ classdef RacquetTracker < handle
                         -8.5, 20];
 
             obj.shortLine = [10, 15
-                        -10, 15];
+                             -10, 15];
                     
             obj.colors = colormap('hsv');
             obj.colors = obj.colors(round(linspace(1, size(obj.colors,1), obj.numParticles)),:);
@@ -116,9 +118,29 @@ classdef RacquetTracker < handle
             obj.vsrc.CurrentTime = obj.vsrc.CurrentTime + obj.skipFrames / obj.vsrc.FrameRate;
         end
         
+        function step(obj)
+            [frame, mask]  = obj.readFrame();
+            obj.pf.correct(mask);
+            [~, idx] = sort(obj.pf.Weights, 'descend');
+            obj.pf.Weights(idx(1:5))'
+%             obj.plot(frame, obj.pf.Particles(idx(1:obj.showParticles),:), ...
+%                             obj.pf.Weights(idx(1:obj.showParticles)))
+            obj.plot(frame, obj.pf.Particles, ...
+                            obj.pf.Weights)
+            
+            obj.pf.predict();
+%             rows = randperm(obj.numParticles, 10);
+%             obj.pf.Particle(rows,:) = rand(10,2) .* [20, 40] + [-10, 0];
+%             obj.pf.Weights(rows,:) = 
+        end
+        
         function [frame, mask] = lastFrame(obj)
             obj.vsrc.CurrentTime = obj.vsrc.CurrentTime - (obj.skipFrames + 1) / obj.vsrc.FrameRate;
             [frame, mask] = obj.readFrame();
+        end
+        
+        function has_frame = hasFrame(obj)
+            has_frame = hasFrame(obj.vsrc);
         end
         
         function Xk = UpdateFcn(obj, X)
@@ -126,9 +148,9 @@ classdef RacquetTracker < handle
             
             % random velocity
             R = diag([obj.speed_std, obj.speed_std].^2);
-            W = mvnrnd([0, 0], R, size(X, 1));
+            V = mvnrnd([0, 0], R, size(X, 1));
 
-            Xk = X(:,1:2) + W*obj.dt;
+            Xk = X(:,1:2) + V * obj.update_dt;
         end
         
         function P = MeasurementLikelihoodFcn(obj, X, y)
@@ -147,16 +169,22 @@ classdef RacquetTracker < handle
                     (obj.outbox + footprint) * 304.8);
                 BWout = roipoly(y, iPts(:,1), iPts(:,2));
 
-                P(k) = sum(sum(y & BW, 1), 2) - sum(sum(y & BWout, 1), 2);
                 sBW = sum(BW(:));
                 sBWout = sum(BWout(:));
-                
-                if sBW + sBWout == 0
+                syout = sum(sum(y & BWout, 1), 2);
+                sy = sum(sum(y & BW, 1), 2);
+                if sBW == 0 || sBWout == 0
                     P(k) = 0;
                 else
-                    P(k) = (P(k) + sBWout) / (sBW + sBWout);
+                    P(k) = sy / sBW - 1 * syout / sBWout;
+                    if P(k) < 0
+                        P(k) = 0;
+                    end
                 end
             end
+%             P = 1./(1+exp(-P));
+            P = (P - min(P)) / (max(P) - min(P));
+%             P = P / sum(P);
         end
         
         function [X, P] = image2particle(obj, imagePoint)
@@ -166,7 +194,7 @@ classdef RacquetTracker < handle
                 try
                     figure(obj.hi.Parent.Parent)
                 catch
-                    obj.plot(frame, [])
+                    obj.plot(frame, [], [])
                     figure(obj.hi.Parent.Parent)
                 end
                 imagePoint = ginput();
@@ -177,7 +205,12 @@ classdef RacquetTracker < handle
             P = MeasurementLikelihoodFcn(obj, X, mask);
         end
         
-        function plot(obj, frame, X)
+        function plot(obj, frame, X, P)
+            if nargin == 1
+                frame = obj.lastFrame();
+                X = obj.pf.Particles;
+                P = obj.pf.Weights;
+            end
             try
                 set(obj.hi, 'CData', frame)
                 for p = 1 : size(X, 1)
@@ -188,6 +221,7 @@ classdef RacquetTracker < handle
 
                     set(obj.h1(p), 'XData', footprint(:,1), 'YData', footprint(:,2))
                     set(obj.h2(p), 'XData', iPts(:,1), 'YData', iPts(:,2))
+                    set(obj.h3(p), 'Position', footprint, 'String', sprintf('%d', round(100*P(p))))
                 end
                 
                 % clear from sight
@@ -202,6 +236,7 @@ classdef RacquetTracker < handle
                 plot(obj.shortLine(:,1), obj.shortLine(:,2), 'r--', 'linewidth', 3)
                 for k = 1 : obj.numParticles
                     obj.h1(k) = plot(0, -10, 'x', 'linewidth', 5, 'markersize', 20, 'color', obj.colors(k,:));
+                    obj.h3(k) = text(0, -10, '');
                 end
                 axis equal, xlim([-10, 10]), ylim([0, 40]), grid on, xlabel('X_W'), ylabel('Y_W')
                 set(gcf, 'Position', [51, 190, 365, 618])
@@ -212,7 +247,7 @@ classdef RacquetTracker < handle
                     obj.h2(k) = fill([0, 0], [0, 0], obj.colors(k,:), 'linewidth', 1, 'FaceAlpha', 0.02, 'EdgeColor', obj.colors(k,:));
                 end
                 set(gcf, 'Position', [485, 273, 1184, 662])
-                plot(obj, frame, X)
+                plot(obj, frame, X, P)
             end
         end
     end
